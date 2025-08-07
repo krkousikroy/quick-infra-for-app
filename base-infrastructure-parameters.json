@@ -1,0 +1,38 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "bookworm"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "Owner",
+    "ParameterValue": "DPDE"
+  },
+  {
+    "ParameterKey": "VpcCidr",
+    "ParameterValue": "10.0.0.0/20"
+  },
+  {
+    "ParameterKey": "DatabaseName",
+    "ParameterValue": "appdb"
+  },
+  {
+    "ParameterKey": "DatabaseUsername",
+    "ParameterValue": "dbadmin"
+  },
+  {
+    "ParameterKey": "DatabaseInstanceClass",
+    "ParameterValue": "db.t3.small"
+  },
+  {
+    "ParameterKey": "DatabaseAllocatedStorage",
+    "ParameterValue": "20"
+  },
+  {
+    "ParameterKey": "EnableMultiAZ",
+    "ParameterValue": "false"
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "ServiceName",
+    "ParameterValue": "catalog-service"
+  },
+  {
+    "ParameterKey": "GitHubRepo",
+    "ParameterValue": "your-github-username/your-repo-name"
+  },
+  {
+    "ParameterKey": "BaseInfrastructureStackName",
+    "ParameterValue": "bookworm-base-infrastructure"
+  },
+  {
+    "ParameterKey": "ContainerPort",
+    "ParameterValue": "8080"
+  },
+  {
+    "ParameterKey": "AppRunnerCpu",
+    "ParameterValue": "1024"
+  },
+  {
+    "ParameterKey": "AppRunnerMemory",
+    "ParameterValue": "2048"
+  },
+  {
+    "ParameterKey": "CreateSecretsConfig",
+    "ParameterValue": "true"
+  }
+]
