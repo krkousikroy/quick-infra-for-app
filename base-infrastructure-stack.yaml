@@ -10,6 +10,10 @@ Parameters:
     Default: prod
     AllowedValues: [dev, staging, prod]
     Description: Environment name
+  Region:
+    Type: String
+    Default: us-east-1
+    Description: AWS Region for deployment
   Owner:
     Type: String
     Description: Team or owner name for tagging
@@ -524,7 +528,7 @@ Resources:
       DBInstanceClass: !Ref DatabaseInstanceClass
       AllocatedStorage: !Ref DatabaseAllocatedStorage
       Engine: postgres
-      EngineVersion: '15.4'
+      EngineVersion: '16.4'
       MasterUsername: !Ref DatabaseUsername
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabasePasswordSecret}:SecretString:password}}"
       VPCSecurityGroups:

@@ -11,6 +11,10 @@ Parameters:
   BaseInfrastructureStackName:
     Type: String
     Description: Name of the base infrastructure CloudFormation stack
+  Region:
+    Type: String
+    Default: us-east-1
+    Description: AWS Region for deployment
   ContainerPort:
     Type: Number
     Default: 8080
@@ -171,8 +175,7 @@ Resources:
                 Provider: CodeStarSourceConnection
                 Version: '1'
               Configuration:
-                ConnectionArn: !ImportValue
-                  Fn::Sub: "${BaseInfrastructureStackName}-GitHubConnectionArn"
+                ConnectionArn: "arn:aws:codeconnections:ap-south-1:684136133315:connection/265af38b-c850-4d74-8407-a3fe42ba8d18"
                 FullRepositoryId: !Ref GitHubRepo
                 BranchName: main
                 OutputArtifactFormat: CODE_ZIP
@@ -270,11 +273,6 @@ Resources:
             Fn::Sub: "${BaseInfrastructureStackName}-AppRunnerVPCConnectorArn"
         IngressConfiguration:
           IsPubliclyAccessible: false
-          VpcIngressConnection:
-            VpcId: !ImportValue
-              Fn::Sub: "${BaseInfrastructureStackName}-VPCId"
-            VpcEndpointId: !ImportValue
-              Fn::Sub: "${BaseInfrastructureStackName}-AppRunnerVPCEndpointId"
       InstanceConfiguration:
         Cpu: !Ref AppRunnerCpu
         Memory: !Ref AppRunnerMemory
@@ -282,7 +280,7 @@ Resources:
           Fn::Sub: "${BaseInfrastructureStackName}-AppRunnerInstanceRoleArn"
       EncryptionConfiguration:
         KmsKey: !ImportValue
-          Fn::Sub: "${BaseInfrastructureStackName}-KMSKeyId"
+          Fn::Sub: "${BaseInfrastructureStackName}-KMSKeyArn"
       Tags:
         - Key: Environment
           Value: !ImportValue

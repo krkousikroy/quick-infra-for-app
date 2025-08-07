@@ -38,6 +38,39 @@ The infrastructure is split into two main stacks:
 2. GitHub repository with your application code
 3. Dockerfile in your repository root
 
+## Sample Spring Boot Application
+
+This repository includes a sample Spring Boot application for testing the infrastructure:
+
+### Application Structure
+```
+src/
+└── main/
+    ├── java/com/example/demo/
+    │   └── DemoApplication.java
+    └── resources/
+        └── application.properties
+pom.xml
+Dockerfile
+```
+
+### Endpoints
+- `GET /health` - Health check endpoint
+- `GET /dbtest` - Database connectivity test
+
+### Features
+- **Database Integration**: Connects to PostgreSQL using environment variables from Secrets Manager
+- **Health Monitoring**: Basic health check endpoint for App Runner
+- **Multi-stage Docker Build**: Optimized Dockerfile with build and runtime stages
+- **Environment Configuration**: Uses Spring Boot profiles with environment variables
+
+### Environment Variables (Auto-configured)
+The application uses these environment variables provided by the infrastructure:
+- `DB_URL` - Complete PostgreSQL connection string
+- `DB_USER` - Database username
+- `DB_PASSWORD` - Database password
+- `PORT` - Application port (defaults to 8080)
+
 ### Step 1: Deploy Base Infrastructure
 
 1. Update the base infrastructure parameters:
@@ -53,6 +86,7 @@ aws cloudformation deploy \
   --stack-name bookworm-base-infrastructure \
   --parameter-overrides file://base-infrastructure-parameters.json \
   --capabilities CAPABILITY_NAMED_IAM \
+  --region us-east-1 \
   --tags Project=bookworm Environment=prod Owner=DPDE
 ```
 
@@ -76,6 +110,7 @@ aws cloudformation deploy \
   --stack-name bookworm-catalog-service \
   --parameter-overrides file://application-parameters.json \
   --capabilities CAPABILITY_NAMED_IAM \
+  --region us-east-1 \
   --tags Project=bookworm Environment=prod Owner=DPDE Service=catalog-service
 ```
 
@@ -83,13 +118,29 @@ aws cloudformation deploy \
 
 1. Check stack outputs:
 ```bash
-aws cloudformation describe-stacks --stack-name bookworm-base-infrastructure --query 'Stacks[0].Outputs'
-aws cloudformation describe-stacks --stack-name bookworm-catalog-service --query 'Stacks[0].Outputs'
+aws cloudformation describe-stacks --stack-name bookworm-base-infrastructure --region us-east-1 --query 'Stacks[0].Outputs'
+aws cloudformation describe-stacks --stack-name bookworm-catalog-service --region us-east-1 --query 'Stacks[0].Outputs'
 ```
 
 2. The pipeline will automatically trigger on the first deployment and build your application.
 
 3. Access your application via the VPC endpoint. The App Runner service is configured for private access through the VPC endpoint created in the base infrastructure.
+
+### Testing the Sample Application
+
+Once deployed, you can test the sample Spring Boot application:
+
+1. **Health Check**:
+   ```bash
+   curl https://<app-runner-url>/health
+   # Expected: OK
+   ```
+
+2. **Database Connectivity**:
+   ```bash
+   curl https://<app-runner-url>/dbtest
+   # Expected: DB Connection: SUCCESS
+   ```
 
 ## Configuration Parameters
 
@@ -106,6 +157,7 @@ aws cloudformation describe-stacks --stack-name bookworm-catalog-service --query
 | DatabaseInstanceClass | RDS instance class | db.t3.small |
 | DatabaseAllocatedStorage | Database storage in GB | 20 |
 | EnableMultiAZ | Enable Multi-AZ for RDS | false |
+| Region | AWS Region for deployment | us-east-1 |
 
 ### Application Parameters
 
@@ -118,6 +170,7 @@ aws cloudformation describe-stacks --stack-name bookworm-catalog-service --query
 | AppRunnerCpu | CPU units (256-4096) | 1024 |
 | AppRunnerMemory | Memory in MB | 2048 |
 | CreateSecretsConfig | Configure database secrets | true |
+| Region | AWS Region for deployment | us-east-1 |
 
 ## Environment Variables
 
@@ -153,12 +206,12 @@ To delete the infrastructure:
 
 1. Delete application stack first:
 ```bash
-aws cloudformation delete-stack --stack-name bookworm-catalog-service
+aws cloudformation delete-stack --stack-name bookworm-catalog-service --region us-east-1
 ```
 
 2. Wait for completion, then delete base infrastructure:
 ```bash
-aws cloudformation delete-stack --stack-name bookworm-base-infrastructure
+aws cloudformation delete-stack --stack-name bookworm-base-infrastructure --region us-east-1
 ```
 
 **Note**: Ensure all ECR images are deleted before stack deletion to avoid errors.
@@ -188,11 +241,11 @@ Update `base-infrastructure-stack.yaml` and redeploy. Application stacks will au
 
 ```bash
 # Check stack events
-aws cloudformation describe-stack-events --stack-name <stack-name>
+aws cloudformation describe-stack-events --stack-name <stack-name> --region us-east-1
 
 # View CodeBuild logs
-aws logs describe-log-groups --log-group-name-prefix /aws/codebuild/
+aws logs describe-log-groups --log-group-name-prefix /aws/codebuild/ --region us-east-1
 
 # Check App Runner service status
-aws apprunner describe-service --service-arn <service-arn>
+aws apprunner describe-service --service-arn <service-arn> --region us-east-1
 ```
