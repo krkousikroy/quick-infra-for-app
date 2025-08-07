@@ -1,4 +1,4 @@
-# Generic Application Infrastructure
+# Generic Application Infrastructure3
 
 This repository contains CloudFormation templates for deploying a complete application infrastructure on AWS, including base infrastructure components and application-specific resources.
 
