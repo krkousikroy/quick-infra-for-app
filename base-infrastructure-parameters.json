@@ -1,11 +1,11 @@
 [
   {
     "ParameterKey": "ProjectName",
-    "ParameterValue": "model"
+    "ParameterValue": "custom"
   },
   {
     "ParameterKey": "Environment",
-    "ParameterValue": "prod"
+    "ParameterValue": "dev"
   },
   {
     "ParameterKey": "Owner",
@@ -17,7 +17,7 @@
   },
   {
     "ParameterKey": "DatabaseName",
-    "ParameterValue": "modeldb"
+    "ParameterValue": "customdb"
   },
   {
     "ParameterKey": "DatabaseUsername",
@@ -37,6 +37,6 @@
   },
   {
     "ParameterKey": "Region",
-    "ParameterValue": "ap-south-1"
+    "ParameterValue": "us-east-1"
   }
 ]

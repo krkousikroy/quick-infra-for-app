@@ -175,7 +175,8 @@ Resources:
                 Provider: CodeStarSourceConnection
                 Version: '1'
               Configuration:
-                ConnectionArn: "arn:aws:codeconnections:ap-south-1:684136133315:connection/265af38b-c850-4d74-8407-a3fe42ba8d18"
+                ConnectionArn: !ImportValue
+                  Fn::Sub: "${BaseInfrastructureStackName}-GitHubConnectionArn"
                 FullRepositoryId: !Ref GitHubRepo
                 BranchName: main
                 OutputArtifactFormat: CODE_ZIP
@@ -294,17 +295,45 @@ Resources:
         - Key: Service
           Value: !Ref ServiceName
 
+  AppRunnerVPCIngressConnection:
+    Type: AWS::AppRunner::VpcIngressConnection
+    DependsOn: AppRunnerService
+    Properties:
+      ServiceArn: !GetAtt AppRunnerService.ServiceArn
+      IngressVpcConfiguration:
+        VpcId: !ImportValue
+          Fn::Sub: "${BaseInfrastructureStackName}-VPCId"
+        VpcEndpointId: !ImportValue
+          Fn::Sub: "${BaseInfrastructureStackName}-AppRunnerVPCEndpointId"
+      Tags:
+        - Key: Environment
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Environment"
+        - Key: Project
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-ProjectName"
+        - Key: Owner
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Owner"
+        - Key: Service
+          Value: !Ref ServiceName
+
 Outputs:
   ECRRepositoryURI:
     Description: ECR Repository URI
     Value: !GetAtt ECRRepository.RepositoryUri
     Export:
       Name: !Sub "${AWS::StackName}-ECRRepositoryURI"
-  AppRunnerServiceURL:
-    Description: App Runner Service URL
-    Value: !Sub "https://${AppRunnerService.ServiceUrl}"
+  AppRunnerServiceArn:
+    Description: App Runner Service ARN
+    Value: !GetAtt AppRunnerService.ServiceArn
     Export:
-      Name: !Sub "${AWS::StackName}-AppRunnerServiceURL"
+      Name: !Sub "${AWS::StackName}-AppRunnerServiceArn"
+  AppRunnerServiceDomain:
+    Description: App Runner Service Domain (VPC Access)
+    Value: !GetAtt AppRunnerVPCIngressConnection.DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-AppRunnerServiceDomain"
   PipelineName:
     Description: CodePipeline Name
     Value: !Ref CodePipeline

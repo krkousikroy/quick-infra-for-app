@@ -1,15 +1,15 @@
 [
   {
     "ParameterKey": "ServiceName",
-    "ParameterValue": "model-service"
+    "ParameterValue": "app-1"
   },
   {
     "ParameterKey": "GitHubRepo",
-    "ParameterValue": "bookworm/quick-infra-for-app"
+    "ParameterValue": "krkousikroy/quick-infra-for-app"
   },
   {
     "ParameterKey": "BaseInfrastructureStackName",
-    "ParameterValue": "model-base-infrastructure"
+    "ParameterValue": "custom-base-infrastructure"
   },
   {
     "ParameterKey": "ContainerPort",
@@ -29,6 +29,6 @@
   },
   {
     "ParameterKey": "Region",
-    "ParameterValue": "ap-south-1"
+    "ParameterValue": "us-east-1"
   }
 ]

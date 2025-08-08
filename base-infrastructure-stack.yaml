@@ -406,8 +406,8 @@ Resources:
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          SourceSecurityGroupId: !Ref ApplicationSecurityGroup
-          Description: HTTPS access from application
+          CidrIp: !Ref VpcCidr
+          Description: HTTPS access from within VPC
       Tags:
         - Key: Name
           Value: !Sub "${ProjectName}-${Environment}-vpc-endpoint-sg"
@@ -495,14 +495,15 @@ Resources:
   # Application Secrets
   ApplicationSecrets:
     Type: AWS::SecretsManager::Secret
+    DependsOn: Database
     Properties:
       Name: !Sub "${ProjectName}/${Environment}/secrets"
       Description: Application secrets
       SecretString: !Sub |
         {
-          "DB_URL": "postgresql://${DatabaseUsername}:${DatabasePasswordSecret}@${Database.Endpoint.Address}:${Database.Endpoint.Port}/${DatabaseName}",
+          "DB_URL": "jdbc:postgresql://${Database.Endpoint.Address}:${Database.Endpoint.Port}/${DatabaseName}",
           "DB_USER": "${DatabaseUsername}",
-          "DB_PASSWORD": "${DatabasePasswordSecret}",
+          "DB_PASSWORD": "{{resolve:secretsmanager:${DatabasePasswordSecret}:SecretString:password}}",
           "DB_HOST": "${Database.Endpoint.Address}",
           "DB_PORT": "${Database.Endpoint.Port}",
           "DB_NAME": "${DatabaseName}"
@@ -671,7 +672,7 @@ Resources:
                 Action:
                   - s3:GetObject
                   - s3:PutObject
-                Resource: !Sub "arn:aws:s3:::${ProjectName}-*-pipeline-artifacts-${AWS::AccountId}/*"
+                Resource: !Sub "arn:aws:s3:::${ProjectName}-pipeline-artifacts-${AWS::AccountId}/*"
               - Effect: Allow
                 Action:
                   - kms:Decrypt
@@ -705,8 +706,8 @@ Resources:
                   - s3:PutObject
                   - s3:GetBucketVersioning
                 Resource:
-                  - !Sub "arn:aws:s3:::${ProjectName}-*-pipeline-artifacts-${AWS::AccountId}/*"
-                  - !Sub "arn:aws:s3:::${ProjectName}-*-pipeline-artifacts-${AWS::AccountId}"
+                  - !Sub "arn:aws:s3:::${ProjectName}-pipeline-artifacts-${AWS::AccountId}/*"
+                  - !Sub "arn:aws:s3:::${ProjectName}-pipeline-artifacts-${AWS::AccountId}"
               - Effect: Allow
                 Action:
                   - codebuild:BatchGetBuilds
@@ -715,6 +716,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - codeconnections:UseConnection
+                  - codestar-connections:UseConnection
                 Resource: !Ref GitHubConnection
               - Effect: Allow
                 Action:
@@ -767,6 +769,11 @@ Resources:
                 Action:
                   - secretsmanager:GetSecretValue
                 Resource: !Ref ApplicationSecrets
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt KMSKey.Arn
       Tags:
         - Key: Environment
           Value: !Ref Environment
