@@ -95,7 +95,7 @@ The infrastructure follows a two-tier architecture pattern optimized for securit
 
 ## Sample Spring Boot Application
 
-To demonstrate the simplicity of application deployment with this infrastructure, we've included a complete Spring Boot application that showcases:
+To demonstrate the simplicity of application deployment with this infrastructure, I've included a complete Spring Boot application that showcases:
 
 ### Application Features
 - **Database Integration**: Seamless PostgreSQL connectivity using Secrets Manager
