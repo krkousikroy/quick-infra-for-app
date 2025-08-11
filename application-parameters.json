@@ -1,0 +1,34 @@
+[
+  {
+    "ParameterKey": "ServiceName",
+    "ParameterValue": "app-1"
+  },
+  {
+    "ParameterKey": "GitHubRepo",
+    "ParameterValue": "krkousikroy/quick-infra-for-app"
+  },
+  {
+    "ParameterKey": "BaseInfrastructureStackName",
+    "ParameterValue": "custom-base-infrastructure"
+  },
+  {
+    "ParameterKey": "ContainerPort",
+    "ParameterValue": "8080"
+  },
+  {
+    "ParameterKey": "AppRunnerCpu",
+    "ParameterValue": "1024"
+  },
+  {
+    "ParameterKey": "AppRunnerMemory",
+    "ParameterValue": "2048"
+  },
+  {
+    "ParameterKey": "CreateSecretsConfig",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "Region",
+    "ParameterValue": "us-east-1"
+  }
+]

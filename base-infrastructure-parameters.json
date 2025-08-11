@@ -1,0 +1,42 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "custom"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "Owner",
+    "ParameterValue": "DPDE"
+  },
+  {
+    "ParameterKey": "VpcCidr",
+    "ParameterValue": "10.0.0.0/20"
+  },
+  {
+    "ParameterKey": "DatabaseName",
+    "ParameterValue": "customdb"
+  },
+  {
+    "ParameterKey": "DatabaseUsername",
+    "ParameterValue": "dbadmin"
+  },
+  {
+    "ParameterKey": "DatabaseInstanceClass",
+    "ParameterValue": "db.t3.small"
+  },
+  {
+    "ParameterKey": "DatabaseAllocatedStorage",
+    "ParameterValue": "20"
+  },
+  {
+    "ParameterKey": "EnableMultiAZ",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "Region",
+    "ParameterValue": "us-east-1"
+  }
+]

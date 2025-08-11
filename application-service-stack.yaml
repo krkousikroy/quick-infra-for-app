@@ -1,0 +1,341 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Generic Application Infrastructure - ECR, CodeBuild, CodePipeline, and App Runner'
+
+Parameters:
+  ServiceName:
+    Type: String
+    Description: Name of the service/application
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository in format 'owner/repo-name'
+  BaseInfrastructureStackName:
+    Type: String
+    Description: Name of the base infrastructure CloudFormation stack
+  Region:
+    Type: String
+    Default: us-east-1
+    Description: AWS Region for deployment
+  ContainerPort:
+    Type: Number
+    Default: 8080
+    Description: Port on which the application runs
+  AppRunnerCpu:
+    Type: Number
+    Default: 1024
+    AllowedValues: [256, 512, 1024, 2048, 4096]
+    Description: CPU units for App Runner (1024 = 1 vCPU)
+  AppRunnerMemory:
+    Type: Number
+    Default: 2048
+    AllowedValues: [512, 1024, 2048, 3072, 4096, 6144, 8192, 10240, 12288]
+    Description: Memory in MB for App Runner
+  CreateSecretsConfig:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Whether to configure Secrets Manager environment variables
+
+Conditions:
+  HasSecretsConfig: !Equals [!Ref CreateSecretsConfig, 'true']
+
+
+
+Resources:
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub 
+        - "${ProjectName}/${ServiceName}"
+        - ProjectName: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-ProjectName"
+      ImageTagMutability: MUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: KMS
+        KmsKey: !ImportValue
+          Fn::Sub: "${BaseInfrastructureStackName}-KMSKeyId"
+      Tags:
+        - Key: Environment
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Environment"
+        - Key: Project
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-ProjectName"
+        - Key: Owner
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Owner"
+        - Key: Service
+          Value: !Ref ServiceName
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["v"],
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Delete untagged images older than 1 day",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 1
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub 
+        - "${ProjectName}-${ServiceName}-build"
+        - ProjectName: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-ProjectName"
+      ServiceRole: !ImportValue
+        Fn::Sub: "${BaseInfrastructureStackName}-CodeBuildRoleArn"
+      EncryptionKey: !ImportValue
+        Fn::Sub: "${BaseInfrastructureStackName}-KMSKeyId"
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        PrivilegedMode: true
+      Tags:
+        - Key: Environment
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Environment"
+        - Key: Project
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-ProjectName"
+        - Key: Owner
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Owner"
+        - Key: Service
+          Value: !Ref ServiceName
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Logging in to Amazon ECR...
+                - aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+            build:
+              commands:
+                - echo Build started on `date`
+                - docker build -t ${ECRRepository.RepositoryUri}:latest .
+            post_build:
+              commands:
+                - echo Build completed on `date`
+                - docker push ${ECRRepository.RepositoryUri}:latest
+
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub 
+        - "${ProjectName}-${ServiceName}-pipeline"
+        - ProjectName: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-ProjectName"
+      RoleArn: !ImportValue
+        Fn::Sub: "${BaseInfrastructureStackName}-PipelineRoleArn"
+      ArtifactStore:
+        Type: S3
+        Location: !ImportValue
+          Fn::Sub: "${BaseInfrastructureStackName}-PipelineArtifactsBucketName"
+        EncryptionKey:
+          Id: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-KMSKeyId"
+          Type: KMS
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: '1'
+              Configuration:
+                ConnectionArn: !ImportValue
+                  Fn::Sub: "${BaseInfrastructureStackName}-GitHubConnectionArn"
+                FullRepositoryId: !Ref GitHubRepo
+                BranchName: main
+                OutputArtifactFormat: CODE_ZIP
+              OutputArtifacts:
+                - Name: SourceOutput
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              InputArtifacts:
+                - Name: SourceOutput
+      Tags:
+        - Key: Environment
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Environment"
+        - Key: Project
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-ProjectName"
+        - Key: Owner
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Owner"
+        - Key: Service
+          Value: !Ref ServiceName
+
+  PipelineWaitResource:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: CodePipeline
+    Properties:
+      ServiceToken: !ImportValue
+        Fn::Sub: "${BaseInfrastructureStackName}-PipelineCompletionWaitFunctionArn"
+      Version: "1.0"
+      Description: "3-minute delay for pipeline completion"
+
+  AppRunnerService:
+    Type: AWS::AppRunner::Service
+    DependsOn: PipelineWaitResource
+    Properties:
+      ServiceName: !Sub 
+        - "${ProjectName}-${ServiceName}"
+        - ProjectName: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-ProjectName"
+      SourceConfiguration:
+        ImageRepository:
+          ImageIdentifier: !Sub "${ECRRepository.RepositoryUri}:latest"
+          ImageConfiguration:
+            Port: !Ref ContainerPort
+            RuntimeEnvironmentSecrets: !If
+              - HasSecretsConfig
+              - - Name: DB_URL
+                  Value: !Sub 
+                    - "${SecretsArn}:DB_URL::"
+                    - SecretsArn: !ImportValue
+                        Fn::Sub: "${BaseInfrastructureStackName}-ApplicationSecretsArn"
+                - Name: DB_USER
+                  Value: !Sub 
+                    - "${SecretsArn}:DB_USER::"
+                    - SecretsArn: !ImportValue
+                        Fn::Sub: "${BaseInfrastructureStackName}-ApplicationSecretsArn"
+                - Name: DB_PASSWORD
+                  Value: !Sub 
+                    - "${SecretsArn}:DB_PASSWORD::"
+                    - SecretsArn: !ImportValue
+                        Fn::Sub: "${BaseInfrastructureStackName}-ApplicationSecretsArn"
+                - Name: DB_HOST
+                  Value: !Sub 
+                    - "${SecretsArn}:DB_HOST::"
+                    - SecretsArn: !ImportValue
+                        Fn::Sub: "${BaseInfrastructureStackName}-ApplicationSecretsArn"
+                - Name: DB_PORT
+                  Value: !Sub 
+                    - "${SecretsArn}:DB_PORT::"
+                    - SecretsArn: !ImportValue
+                        Fn::Sub: "${BaseInfrastructureStackName}-ApplicationSecretsArn"
+                - Name: DB_NAME
+                  Value: !Sub 
+                    - "${SecretsArn}:DB_NAME::"
+                    - SecretsArn: !ImportValue
+                        Fn::Sub: "${BaseInfrastructureStackName}-ApplicationSecretsArn"
+              - !Ref AWS::NoValue
+          ImageRepositoryType: ECR
+        AutoDeploymentsEnabled: true
+        AuthenticationConfiguration:
+          AccessRoleArn: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-AppRunnerRoleArn"
+      NetworkConfiguration:
+        EgressConfiguration:
+          EgressType: VPC
+          VpcConnectorArn: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-AppRunnerVPCConnectorArn"
+        IngressConfiguration:
+          IsPubliclyAccessible: false
+      InstanceConfiguration:
+        Cpu: !Ref AppRunnerCpu
+        Memory: !Ref AppRunnerMemory
+        InstanceRoleArn: !ImportValue
+          Fn::Sub: "${BaseInfrastructureStackName}-AppRunnerInstanceRoleArn"
+      EncryptionConfiguration:
+        KmsKey: !ImportValue
+          Fn::Sub: "${BaseInfrastructureStackName}-KMSKeyArn"
+      Tags:
+        - Key: Environment
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Environment"
+        - Key: Project
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-ProjectName"
+        - Key: Owner
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Owner"
+        - Key: Service
+          Value: !Ref ServiceName
+
+  AppRunnerVPCIngressConnection:
+    Type: AWS::AppRunner::VpcIngressConnection
+    DependsOn: AppRunnerService
+    Properties:
+      ServiceArn: !GetAtt AppRunnerService.ServiceArn
+      IngressVpcConfiguration:
+        VpcId: !ImportValue
+          Fn::Sub: "${BaseInfrastructureStackName}-VPCId"
+        VpcEndpointId: !ImportValue
+          Fn::Sub: "${BaseInfrastructureStackName}-AppRunnerVPCEndpointId"
+      Tags:
+        - Key: Environment
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Environment"
+        - Key: Project
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-ProjectName"
+        - Key: Owner
+          Value: !ImportValue
+            Fn::Sub: "${BaseInfrastructureStackName}-Owner"
+        - Key: Service
+          Value: !Ref ServiceName
+
+Outputs:
+  ECRRepositoryURI:
+    Description: ECR Repository URI
+    Value: !GetAtt ECRRepository.RepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-ECRRepositoryURI"
+  AppRunnerServiceArn:
+    Description: App Runner Service ARN
+    Value: !GetAtt AppRunnerService.ServiceArn
+    Export:
+      Name: !Sub "${AWS::StackName}-AppRunnerServiceArn"
+  AppRunnerServiceDomain:
+    Description: App Runner Service Domain (VPC Access)
+    Value: !GetAtt AppRunnerVPCIngressConnection.DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-AppRunnerServiceDomain"
+  PipelineName:
+    Description: CodePipeline Name
+    Value: !Ref CodePipeline
+    Export:
+      Name: !Sub "${AWS::StackName}-PipelineName"
