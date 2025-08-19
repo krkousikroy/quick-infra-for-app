@@ -1,0 +1,52 @@
+# AWS Q Developer Deployment Prompt Template
+# Template for context-aware infrastructure deployment requests
+
+## Deployment Context
+**Project**: {{project_name}}
+**Environment**: {{environment}}
+**Service**: {{service_name}}
+**Repository**: {{github_repo}}
+
+## Infrastructure Requirements
+**Base Infrastructure Stack**: {{base_stack_name}}
+**Application Type**: {{app_type}}
+**Container Port**: {{container_port}}
+**Resource Requirements**:
+- CPU: {{cpu_units}}
+- Memory: {{memory_mb}}
+- Storage: {{storage_gb}}
+
+## Security Configuration
+**VPC Integration**: Required
+**Database Access**: {{database_required}}
+**Secrets Management**: AWS Secrets Manager
+**Encryption**: Customer-managed KMS keys
+**Network Isolation**: Private subnets only
+
+## Deployment Preferences
+**Auto-scaling**: {{auto_scaling_enabled}}
+**Multi-AZ**: {{multi_az_enabled}}
+**Backup Retention**: {{backup_retention_days}} days
+**Monitoring**: CloudWatch + X-Ray
+**Cost Optimization**: {{cost_optimization_level}}
+
+## Compliance Requirements
+**Data Classification**: {{data_classification}}
+**Regulatory Requirements**: {{compliance_frameworks}}
+**Audit Logging**: {{audit_logging_required}}
+**Access Controls**: {{access_control_requirements}}
+
+## Expected Outcomes
+- Secure, scalable App Runner deployment
+- Automated CI/CD pipeline
+- Comprehensive monitoring and alerting
+- Cost-optimized resource allocation
+- Full compliance with security requirements
+
+## AWS Q Developer Instructions
+Please analyze the above context and:
+1. Generate optimal CloudFormation parameters
+2. Recommend security configurations
+3. Suggest performance optimizations
+4. Provide cost estimates
+5. Create deployment checklist

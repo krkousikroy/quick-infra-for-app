@@ -1,16 +1,21 @@
-# Compiled class file
+# AWS Credentials and Config
+.aws/credentials
+.aws/config
+*.pem
+*.key
+
+# CloudFormation Outputs
+*.outputs
+stack-outputs.json
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Java
 *.class
-
-# Log file
 *.log
-
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
 *.jar
 *.war
 *.nar
@@ -18,7 +23,48 @@
 *.zip
 *.tar.gz
 *.rar
-
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+target/
+.mtj.tmp/
+
+# IDE & Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-*
+.project
+.classpath
+.settings/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+.docker/
+
+# Node.js (for any frontend components)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Build artifacts
+build/
+dist/
+out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary Files
+*.tmp
+*.temp
+*~
+
+# Logs
+logs/
+*.log

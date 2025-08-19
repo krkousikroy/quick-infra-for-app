@@ -1,0 +1,56 @@
+# AWS Q Developer Infrastructure Agent Configuration
+# Defines agentic behaviors for intelligent infrastructure management
+
+agent:
+  name: "AWS App Runner Infrastructure Agent"
+  version: "1.0"
+  description: "Intelligent agent for AWS App Runner infrastructure provisioning and management"
+
+capabilities:
+  - autonomous_provisioning
+  - security_hardening
+  - cost_optimization
+  - performance_tuning
+  - compliance_monitoring
+
+behaviors:
+  infrastructure_analysis:
+    - analyze_workload_patterns
+    - recommend_optimal_configurations
+    - predict_scaling_requirements
+    - identify_cost_optimization_opportunities
+
+  security_automation:
+    - continuous_compliance_monitoring
+    - automated_vulnerability_remediation
+    - security_drift_detection
+    - access_pattern_analysis
+
+  operational_intelligence:
+    - predictive_maintenance
+    - automated_incident_response
+    - performance_optimization
+    - capacity_planning
+
+triggers:
+  - code_commit
+  - infrastructure_drift
+  - security_alert
+  - performance_degradation
+  - cost_anomaly
+
+integrations:
+  aws_services:
+    - cloudformation
+    - app_runner
+    - rds
+    - secrets_manager
+    - cloudwatch
+    - security_hub
+    - config
+    - cost_explorer
+
+  external_services:
+    - github
+    - container_registries
+    - monitoring_tools

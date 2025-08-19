@@ -1,0 +1,36 @@
+# AWS Native Development Rules
+# Context engineering rules for AWS Q Developer agentic workflows
+
+## Infrastructure Rules
+- Always use AWS Well-Architected Framework principles
+- Prefer serverless and managed services over self-managed infrastructure
+- Implement defense-in-depth security patterns
+- Use AWS native encryption (KMS) for all data at rest and in transit
+- Follow least privilege access patterns with IAM roles and policies
+
+## App Runner Specific Rules
+- Always deploy App Runner services within VPC for security
+- Use VPC connectors for database and internal service connectivity
+- Implement auto-scaling based on traffic patterns
+- Configure health checks and observability from deployment
+
+## CloudFormation Rules
+- Use modular templates with clear separation of concerns
+- Implement proper parameter validation and constraints
+- Use cross-stack references for shared resources
+- Include comprehensive tagging strategy for cost allocation
+- Implement proper deletion policies for stateful resources
+
+## Security Rules
+- Never hardcode credentials or sensitive data
+- Use AWS Secrets Manager for all application secrets
+- Implement network isolation with security groups
+- Enable encryption for all AWS services that support it
+- Use customer-managed KMS keys for enhanced security control
+
+## Operational Rules
+- Implement comprehensive logging with CloudWatch
+- Use AWS native monitoring and alerting
+- Implement automated backup and disaster recovery
+- Use Infrastructure as Code for all deployments
+- Implement proper environment separation (dev/staging/prod)

@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2025 AWS Migration Factory
+Copyright (c) 2025 AWS Q Developer Agentic Infrastructure Platform
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+DISCLAIMER:
+This project is a demonstration of AWS Q Developer capabilities and is intended
+for educational and showcase purposes. Users are responsible for:
+- AWS service costs incurred during deployment
+- Proper security configuration in production environments
+- Compliance with their organization's policies and regulations
+- Regular updates and maintenance of deployed infrastructure
+
+AWS service usage is subject to AWS Customer Agreement and Service Terms.
