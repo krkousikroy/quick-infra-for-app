@@ -1,0 +1,401 @@
+#!/usr/bin/env python3
+
+"""
+MTA Utility v3 Python - Cross-Platform (Windows/Linux/macOS)
+This script replaces the bash version to ensure better Windows compatibility.
+Features: 
+- Fetches OpenShift manifests and docker image binaries.
+- Zips the artifacts natively (no 'zip' CLI needed).
+- Creates an MTA Application.
+- Uploads the zip file directly to the application bucket.
+- Triggers an Assessment with `binary: true` for jar analysis.
+"""
+
+import argparse
+import csv
+import logging
+import os
+import shutil
+import subprocess
+import sys
+import time
+import json
+import requests
+import tarfile
+import concurrent.futures
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+# Suppress insecure request warnings if they don't have valid SSL certs
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+def setup_logging():
+    log_file = "./mta_workflow_win_runtime.log"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(levelname)s] %(asctime)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, mode='a', encoding='utf-8'),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+
+def check_prereqs(skip_oc=False):
+    logging.info("Running pre-flight checks...")
+    tools = ["docker"]
+    if not skip_oc:
+        tools.append("oc")
+        
+    missing = []
+    for tool in tools:
+        if shutil.which(tool) is None:
+            missing.append(tool)
+    if missing:
+        logging.error(f"Required command(s) '{', '.join(missing)}' could not be found in PATH.")
+        sys.exit(1)
+
+    if not skip_oc:
+        # Validate OpenShift Login
+        try:
+            subprocess.run(["oc", "whoami"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            logging.info("OpenShift CLI (oc) authentication verified.")
+        except subprocess.CalledProcessError:
+            logging.error("You do not appear to be logged into OpenShift. Please run 'oc login' first, or use --skip-oc to skip this.")
+            sys.exit(1)
+
+    # Validate Docker daemon
+    try:
+        subprocess.run(["docker", "info"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logging.info("Docker daemon is running.")
+    except subprocess.CalledProcessError:
+        logging.error("Docker daemon is not running. Please start Docker Desktop.")
+        sys.exit(1)
+
+def check_mta_api(url, token):
+    logging.info("Testing MTA API connection...")
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = requests.get(f"{url}/hub/applications", headers=headers, verify=False, timeout=10)
+        if response.status_code == 200:
+            logging.info("MTA API connection successful.")
+        else:
+            logging.error(f"MTA API connection failed. HTTP Code: {response.status_code}")
+            sys.exit(1)
+    except Exception as e:
+        logging.error(f"MTA API connection error: {e}")
+        sys.exit(1)
+
+def fetch_oc_resources(namespace, out_dir):
+    logging.info(f"Fetching OpenShift manifests for namespace: {namespace}")
+    manifests_dir = os.path.join(out_dir, "manifests")
+    os.makedirs(manifests_dir, exist_ok=True)
+    
+    resources = ["deployment", "service", "route", "ingress", "configmap", "secret", "statefulset", "daemonset"]
+    for res in resources:
+        try:
+            # Check if resource exists
+            check_proc = subprocess.run(["oc", "get", res, "-n", namespace], capture_output=True)
+            if check_proc.returncode == 0:
+                out_file = os.path.join(manifests_dir, f"{res}s.yaml")
+                with open(out_file, "w") as f:
+                    subprocess.run(["oc", "get", res, "-n", namespace, "-o", "yaml"], stdout=f, stderr=subprocess.DEVNULL)
+                logging.info(f"  -> Exported {res} to manifests/{res}s.yaml")
+        except Exception as e:
+            logging.warning(f"Error fetching {res}: {e}")
+
+def process_app_row(app_name, current_image, namespace, url, token, targets_csv, cleanup, skip_oc):
+    app_name = "".join([c if c.isalnum() else "-" for c in app_name])
+    extract_dir = f"./mta-assessment-{app_name}"
+    app_zip = f"{app_name}.zip"
+    container_id = None
+    
+    logging.info("===========================================")
+    logging.info(f"Processing Row   : App={app_name} | Namespace={namespace}")
+    logging.info(f"Image URL        : {current_image}")
+    logging.info("===========================================")
+
+    os.makedirs(extract_dir, exist_ok=True)
+
+    # 1. Fetch OpenShift Manifests
+    if not skip_oc and namespace:
+        logging.info(f"1. Fetching OpenShift Resources for namespace: {namespace}...")
+        fetch_oc_resources(namespace, extract_dir)
+    else:
+        logging.info("1. Skipping OpenShift Resource extraction as requested (--skip-oc) or no namespace provided.")
+
+    # 2. Extract Container Binaries
+    logging.info(f"2. Preparing container image: {current_image}...")
+    
+    # We use docker create directly. Docker will use the local disk cache if available 
+    # (great for offline image scanning), otherwise it automatically pulls it from the registry.
+    logging.info(f"Resolving image and creating temporary container...")
+    try:
+        create_proc = subprocess.run(["docker", "create", current_image], capture_output=True, text=True, check=True)
+        container_id = create_proc.stdout.strip()
+    except subprocess.CalledProcessError:
+        logging.error(f"Failed to find or pull Docker container from {current_image}. Skipping.")
+        step_cleanup(app_name, current_image, container_id, extract_dir, app_zip, cleanup)
+        return False
+
+    bin_dir = os.path.join(extract_dir, "source")
+    os.makedirs(bin_dir, exist_ok=True)
+    extracted = False
+
+    logging.info(f"Dynamically scanning container filesystem for {current_image} (ignoring generic framework libraries)...")
+    
+    # We strictly ignore paths containing base Java and Application Server framework libraries
+    # to avoid flooding the MTA analyzer with irrelevant system packages
+    ignore_substrings = [
+        "/usr/lib/jvm/", "/usr/java/", "jre/lib/", "jdk/lib/", 
+        "/.m2/", "/.gradle/", "/var/cache/", "/usr/share/", "/usr/lib64/",
+        "/modules/system/", "/wlp/lib/", "/tomcat/lib/", "apache-tomcat/lib/"
+    ]
+    
+    try:
+        # Stream the entirely flattened filesystem image from the docker daemon dynamically
+        with subprocess.Popen(["docker", "export", container_id], stdout=subprocess.PIPE) as proc:
+            with tarfile.open(fileobj=proc.stdout, mode="r|") as tar:
+                for member in tar:
+                    if member.isfile():
+                        name = member.name
+                        
+                        # Look for compiled artifacts
+                        if name.endswith('.jar') or name.endswith('.war') or name.endswith('.ear'):
+                            
+                            # Ensure it's not an internal system or base server framework file
+                            if not any(ign in name for ign in ignore_substrings):
+                                dest_path = os.path.join(bin_dir, name.lstrip('/').replace('/', os.sep))
+                                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                                
+                                f_in = tar.extractfile(member)
+                                if f_in:
+                                    with open(dest_path, "wb") as f_out:
+                                        shutil.copyfileobj(f_in, f_out)
+                                    extracted = True
+                                    logging.info(f"  -> Discovered & Extracted: /{name}")
+    except Exception as e:
+        logging.error(f"Dynamic filesystem scan failed: {e}")
+
+    # Fallback to copy /app.jar directly if tar logic failed for some edge condition
+    if not extracted:
+        cp_proc = subprocess.run(["docker", "cp", f"{container_id}:/app.jar", bin_dir], capture_output=True)
+        if cp_proc.returncode == 0 and os.path.exists(os.path.join(bin_dir, "app.jar")):
+             logging.info("Extracted /app.jar directly from root.")
+             extracted = True
+
+    # 3. Zip the artifacts natively using Python
+    logging.info(f"3. Creating zip archive {app_zip} for upload...")
+    try:
+        shutil.make_archive(app_name, 'zip', extract_dir)
+    except Exception as e:
+        logging.error(f"Failed to create ZIP archive: {e}")
+        step_cleanup(app_name, current_image, container_id, extract_dir, app_zip, cleanup)
+        return False
+
+    # 4. MTA App Creation
+    logging.info("4. Synchronizing MTA Application definitions...")
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+        
+    # Idempotency: Auto-purge the old application on re-runs to avoid 409 Conflicts or duplicating data
+    try:
+        existing_resp = requests.get(f"{url}/hub/applications", headers=headers, verify=False)
+        if existing_resp.status_code == 200:
+            for app in existing_resp.json():
+                if app.get("name") == app_name:
+                    old_id = app.get("id")
+                    logging.info(f"Existing MTA application detected matching '{app_name}'. Purging old record (ID: {old_id}) to cleanly reset...")
+                    requests.delete(f"{url}/hub/applications/{old_id}", headers=headers, verify=False)
+                    time.sleep(2) # brief pause to let db reconcile
+    except Exception as e:
+        logging.warning(f"Pre-flight application cleanup failed for {app_name}. Continuing... Error: {e}")
+        
+    logging.info("Creating fresh MTA Application...")
+    app_payload = {
+        "name": app_name,
+        "description": f"Docker Image: {current_image} | NS: {namespace}"
+    }
+    try:
+        app_resp = requests.post(f"{url}/hub/applications", headers=headers, json=app_payload, verify=False)
+        app_resp.raise_for_status()
+        app_id = app_resp.json().get("id")
+        logging.info(f"Application successfully created in MTA with ID: {app_id}")
+    except Exception as e:
+        logging.error(f"Failed to create application: {e}")
+        step_cleanup(app_name, current_image, container_id, extract_dir, app_zip, cleanup)
+        return False
+
+    # Upload zip to bucket
+    logging.info("Uploading compiled zip file (Manifests + Binaries) to application bucket...")
+    upload_headers = {}
+    if token:
+        upload_headers["Authorization"] = f"Bearer {token}"
+        
+    try:
+        with open(app_zip, "rb") as f:
+            upload_resp = requests.post(
+                f"{url}/hub/applications/{app_id}/bucket/",
+                headers=upload_headers,
+                files={"file": (app_zip, f, "application/zip")},
+                verify=False
+            )
+        if upload_resp.status_code not in [200, 201, 204]:
+            logging.error(f"File upload failed with HTTP code: {upload_resp.status_code}")
+            step_cleanup(app_name, current_image, container_id, extract_dir, app_zip, cleanup)
+            return False
+        logging.info("File upload completed successfully.")
+    except Exception as e:
+        logging.error(f"Failed during file upload: {e}")
+        step_cleanup(app_name, current_image, container_id, extract_dir, app_zip, cleanup)
+        return False
+
+    # 5. Assessment taskgroup configuration
+    # Note: binary=True forces MTA to evaluate the JARs rather than treating it as a generic source bundle
+    logging.info("5. Running Assessment...")
+    targets_list = [t.strip() for t in targets_csv.split(",")]
+    
+    assessment_data = {
+        "name": f"assessment-{app_name}",
+        "state": "Ready",
+        "data": {
+            "mode": {
+                "artifact": app_zip,
+                "binary": True,
+                "withDeps": False,
+                "diva": False
+            },
+            "targets": targets_list,
+            "sources": [],
+            "scope": { "withKnown": False },
+            "rules": { "path": "", "tags": [] }
+        },
+        "tasks": [
+            {
+                "name": app_name,
+                "application": {"id": app_id}
+            }
+        ]
+    }
+
+    try:
+        tg_resp = requests.post(f"{url}/hub/taskgroups", headers=headers, json=assessment_data, verify=False)
+        tg_resp.raise_for_status()
+        tg_id = tg_resp.json().get("id")
+        logging.info(f"Assessment TaskGroup created successfully: ID={tg_id}")
+
+        submit_headers = {}
+        if token:
+            submit_headers["Authorization"] = f"Bearer {token}"
+            
+        submit_resp = requests.post(f"{url}/hub/taskgroups/{tg_id}/submit", headers=submit_headers, verify=False)
+        submit_resp.raise_for_status()
+        logging.info(f"Assessment triggered successfully for {app_name}!")
+    except Exception as e:
+        logging.error(f"Failed to start assessment or submit taskgroup: {e}")
+        step_cleanup(app_name, current_image, container_id, extract_dir, app_zip, cleanup)
+        return False
+
+    step_cleanup(app_name, current_image, container_id, extract_dir, app_zip, cleanup)
+    return True
+
+def step_cleanup(app_name, current_image, container_id, extract_dir, app_zip, cleanup):
+    if cleanup:
+        logging.info(f"[CLEANUP] Removing artifacts for {app_name}...")
+        if container_id:
+            subprocess.run(["docker", "rm", "-f", container_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if current_image:
+            logging.info(f"[CLEANUP] Removing image {current_image} from Docker...")
+            subprocess.run(["docker", "rmi", "-f", current_image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Windows-friendly folder removal
+        if os.path.exists(extract_dir):
+            shutil.rmtree(extract_dir, ignore_errors=True)
+        if os.path.exists(app_zip):
+            try:
+                os.remove(app_zip)
+            except OSError:
+                pass
+
+def main():
+    parser = argparse.ArgumentParser(description="MTA Utility v3 Python - Windows/Cross-Platform")
+    parser.add_argument("-c", "--csv", required=True, help="CSV file containing: app_name,image_url,namespace")
+    parser.add_argument("-u", "--url", required=True, help="MTA Hub URL (e.g., https://mta...apps.cluster.com)")
+    parser.add_argument("-t", "--token", required=False, default=None, help="Bearer token for OpenShift/MTA authentication (optional if Auth is disabled)")
+    parser.add_argument("-g", "--targets", default="cloud-readiness", help="Comma-separated list of assessment targets")
+    parser.add_argument("-k", "--keep", action="store_true", help="Keep the extracted local artifacts")
+    parser.add_argument("--skip-oc", action="store_true", help="Skip fetching Kubernetes/OpenShift manifests")
+    
+    args = parser.parse_args()
+
+    setup_logging()
+
+    if not os.path.exists(args.csv):
+        logging.error(f"CSV file '{args.csv}' does not exist.")
+        sys.exit(1)
+
+    url_clean = args.url.rstrip("/")
+
+    check_prereqs(args.skip_oc)
+    check_mta_api(url_clean, args.token)
+
+    start_time = time.time()
+    logging.info(f"Starting CSV batch processing from {args.csv}...")
+
+    tasks = []
+    with open(args.csv, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if not row or "".join(row).strip() == "" or row[0].startswith("#"):
+                continue
+            
+            if len(row) >= 2:
+                app_name = row[0].strip()
+                img_url = row[1].strip()
+                ns = row[2].strip() if len(row) >= 3 else ""
+                
+                if not app_name or not img_url or "app_name" in app_name:
+                    continue
+
+                tasks.append((app_name, img_url, ns))
+
+    if not tasks:
+        logging.warning("No valid application rows found in CSV.")
+        sys.exit(0)
+
+    success_count = 0
+    failure_count = 0
+
+    # Max concurrent workers (throttle so it doesn't overwhelm Docker Daemon or memory)
+    max_workers = min(3, len(tasks))
+    logging.info(f"Starting {max_workers} parallel workers for {len(tasks)} applications...")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_app = {
+            executor.submit(process_app_row, app_name, img_url, ns, url_clean, args.token, args.targets, not args.keep, args.skip_oc): app_name 
+            for (app_name, img_url, ns) in tasks
+        }
+        
+        for future in concurrent.futures.as_completed(future_to_app):
+            app_name = future_to_app[future]
+            try:
+                result = future.result()
+                if result:
+                    success_count += 1
+                else:
+                    failure_count += 1
+            except Exception as e:
+                logging.error(f"Critical exception processing {app_name}: {e}")
+                failure_count += 1
+
+    duration = int(time.time() - start_time)
+    logging.info("===========================================")
+    logging.info(f"All tasks complete. Total execution time: {duration} seconds.")
+    logging.info(f"Summary: {success_count} Succeeded, {failure_count} Failed.")
+    logging.info("===========================================")
+
+if __name__ == "__main__":
+    main()
